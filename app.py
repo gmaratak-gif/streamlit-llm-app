@@ -1,6 +1,5 @@
-from dotenv import load_dotenv
-
-load_dotenv()
+# app.py
+# Streamlit × LangChain × OpenAI 簡易LLMアプリ
 
 import os
 from typing import Literal
@@ -8,23 +7,21 @@ from typing import Literal
 import streamlit as st
 from dotenv import load_dotenv
 
-# === 1) 環境変数の読み込み（ローカル: .env / 本番: Secrets） ===
-# ローカル（.env）を先に読み込む
+# === 環境変数の読み込み ===
 load_dotenv()
 
-# Streamlit Cloud 側（Secrets）にあれば上書き利用
-if "OPENAI_API_KEY" in st.secrets:
+# Streamlit Cloud の Secrets を優先
+if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
     os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# === 2) LangChain / OpenAI の準備 ===
-#   ※ Lesson8 スタイル：ChatOpenAI + ChatPromptTemplate + StrOutputParser
+# === LangChain の準備 ===
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-# 選択できる専門家ロール（A/B）
+# 専門家ロール
 ExpertKey = Literal["株式投資アナリスト（A）", "生成AIエンジニア（B）"]
 
 EXPERT_SYSTEM_MESSAGES: dict[ExpertKey, str] = {
@@ -32,18 +29,18 @@ EXPERT_SYSTEM_MESSAGES: dict[ExpertKey, str] = {
         "あなたは厳格で客観的な株式投資アナリストです。"
         "常に根拠・前提・リスク・代替案を提示し、"
         "専門用語は短く説明を添えてください。"
-        "推奨は断定せず、投資助言ではなく教育目的の見解として述べます。"
+        "推奨は断定せず、教育目的として述べます。"
     ),
     "生成AIエンジニア（B）": (
         "あなたは実務に強い生成AIエンジニアです。"
         "設計方針→手順→コード例→検証方法→運用上の注意の順で、"
         "具体的かつ再現可能な手順で説明してください。"
-        "前提条件や制約があれば最初に明示します。"
     ),
 }
 
+
 def build_chain(expert_key: ExpertKey, model_name: str = "gpt-4o-mini", temperature: float = 0.2):
-    """選択した専門家ロールで LangChain のチェーンを構築して返す。"""
+    """選択した専門家ロールでチェーンを構築"""
     system_msg = EXPERT_SYSTEM_MESSAGES[expert_key]
 
     prompt = ChatPromptTemplate.from_messages(
@@ -53,38 +50,32 @@ def build_chain(expert_key: ExpertKey, model_name: str = "gpt-4o-mini", temperat
         ]
     )
 
-    llm = ChatOpenAI(
-        model=model_name,
-        temperature=temperature,
-        # APIキーは環境変数 OPENAI_API_KEY を使用（上で設定済み）
-    )
-
+    llm = ChatOpenAI(model=model_name, temperature=temperature)
     parser = StrOutputParser()
-    chain = prompt | llm | parser
-    return chain
+    return prompt | llm | parser
+
 
 def get_llm_answer(user_text: str, expert_key: ExpertKey, model_name: str = "gpt-4o-mini", temperature: float = 0.2) -> str:
-    """
-    条件：
-      - 引数: 「入力テキスト」「ラジオボタンでの選択値」
-      - 戻り値: LLMからの回答（文字列）
-    """
+    """入力テキストとロールを基にLLMの回答を返す"""
     chain = build_chain(expert_key=expert_key, model_name=model_name, temperature=temperature)
     return chain.invoke({"user_input": user_text})
 
 
-# === 3) Streamlit UI ===
+# === Streamlit UI ===
 st.set_page_config(page_title="Streamlit × LangChain LLM アプリ", page_icon="🤖", layout="centered")
 
 st.title("🤖 Streamlit × LangChain LLM アプリ")
-st.caption("Python 3.11 / LangChain / OpenAI API（.env または Streamlit Secrets）")
+st.caption("Python 3.11 / LangChain / OpenAI API（.env または Secrets）")
 
-with st.expander("ℹ️ アプリの概要・使い方", expanded=True):
+with st.expander("ℹ️ 使い方", expanded=True):
     st.markdown(
-        
+        """
+        - 入力欄に質問を入力し、送信するとLLMが回答します。  
+        - ラジオボタンで専門家の役割を選ぶと、回答のスタイルが変わります。  
+        """
     )
 
-# APIキー未設定の早期警告（実行は可能だが送信時に再チェック）
+# APIキー未設定の警告
 if not OPENAI_API_KEY:
     st.warning("OPENAI_API_KEY が見つかりません。.env または Streamlit Secrets に設定してください。", icon="⚠️")
 
@@ -94,9 +85,9 @@ with st.sidebar:
     model_name = st.selectbox("モデル", ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"], index=0)
     temperature = st.slider("Temperature（創造性）", 0.0, 1.0, 0.2, 0.1)
     st.markdown("---")
-    st.markdown("**デプロイ注意**: Streamlit Cloud では Python バージョンを 3.11 に設定してください。")
+    st.markdown("**注意**: Streamlit Cloud では Python バージョンを 3.11 に設定してください。")
 
-# 専門家ロール選択（ラジオボタン：A / B）
+# 専門家ロール選択
 expert_choice: ExpertKey = st.radio(
     "専門家ロールを選択してください：",
     options=list(EXPERT_SYSTEM_MESSAGES.keys()),
@@ -133,7 +124,3 @@ if submitted:
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
 
-# フッター（ガイド）
-st.markdown(
-
-)
